@@ -21,6 +21,7 @@
 #include "document.h"
 
 #include "changeevents.h"
+#include "containerhelpers.h"
 #include "editableasset.h"
 #include "logginginterface.h"
 #include "object.h"
@@ -148,7 +149,7 @@ void Document::currentObjectDocumentChanged(const ChangeEvent &change)
     case ChangeEvent::TilesAboutToBeRemoved: {
         auto tilesEvent = static_cast<const TilesEvent&>(change);
 
-        if (tilesEvent.tiles.contains(currentObject()))
+        if (contains(tilesEvent.tiles, currentObject()))
             setCurrentObject(nullptr);
 
         break;

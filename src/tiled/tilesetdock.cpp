@@ -825,7 +825,7 @@ void TilesetDock::setCurrentTile(Tile *tile)
     emit currentTileChanged(tile);
 
     if (mMapDocument && tile) {
-        int tilesetIndex = mTilesets.indexOf(tile->tileset());
+        int tilesetIndex = indexOf(mTilesets, tile->tileset());
         if (tilesetIndex != -1)
             mMapDocument->setCurrentObject(tile, mTilesetDocuments.at(tilesetIndex));
     }
