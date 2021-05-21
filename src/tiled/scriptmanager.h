@@ -41,6 +41,8 @@ class ScriptManager : public QObject
 {
     Q_OBJECT
 
+    Q_PROPERTY(bool projectExtensionsSuppressed READ projectExtensionsSuppressed NOTIFY projectExtensionsSuppressedChanged)
+
 public:
     static ScriptManager &instance();
     static void deleteInstance();
@@ -69,6 +71,11 @@ public:
 
     void refreshExtensionsPaths();
 
+    bool projectExtensionsSuppressed() const;
+
+signals:
+    void projectExtensionsSuppressedChanged(bool);
+
 private:
     explicit ScriptManager(QObject *parent = nullptr);
     ~ScriptManager() = default;
@@ -87,6 +94,7 @@ private:
     QString mExtensionsPath;
     QStringList mExtensionsPaths;
     int mTempCount = 0;
+    bool mProjectExtensionsSuppressed = false;
 
     static ScriptManager *mInstance;
 };
@@ -105,6 +113,11 @@ inline ScriptModule *ScriptManager::module() const
 inline QJSEngine *ScriptManager::engine() const
 {
     return mEngine;
+}
+
+inline bool ScriptManager::projectExtensionsSuppressed() const
+{
+    return mProjectExtensionsSuppressed;
 }
 
 } // namespace Tiled
