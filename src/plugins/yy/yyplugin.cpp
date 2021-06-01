@@ -49,6 +49,12 @@ using namespace Yy;
 
 namespace Yy {
 
+static QString sanitizeName(QString name)
+{
+    static const QRegularExpression regexp(QLatin1String("[^a-zA-Z0-9]"));
+    return name.replace(regexp, QStringLiteral("_"));
+}
+
 enum ResourceType
 {
     GMOverriddenPropertyType,
@@ -272,13 +278,12 @@ struct InstanceCreation
 
 struct Context
 {
-    QSet<QString> usedNames;
     std::vector<GMRView> views;
     std::vector<GMPath> paths;
     std::vector<InstanceCreation> instanceCreationOrder;
     std::unique_ptr<MapRenderer> renderer;
 
-    QString makeUnique(const QString &name) const
+    QString makeUnique(const QString &name)
     {
         int num = 0;
         QString uniqueName = name;
@@ -286,8 +291,26 @@ struct Context
             ++num;
             uniqueName = QStringLiteral("%1_%2").arg(name).arg(num);
         }
+        usedNames.insert(uniqueName);
         return uniqueName;
     }
+
+    const QString &instanceName(const MapObject *mapObject, const QString &prefix = QString())
+    {
+        QString &name = instanceNames[mapObject];
+        if (name.isEmpty()) {
+            // Include object ID in the name when necessary because duplicates are not allowed
+            if (mapObject->name().isEmpty())
+                name = makeUnique(QStringLiteral("%1_%2").arg(prefix, QString::number(mapObject->id())));
+            else
+                name = makeUnique(sanitizeName(mapObject->name()));
+        }
+        return name;
+    }
+
+private:
+    QSet<QString> usedNames;
+    QHash<const MapObject*, QString> instanceNames;
 };
 
 } // namespace Yy
@@ -367,12 +390,6 @@ static void writeId(JsonWriter &json, const char *member, const QString &id, con
     }
 }
 
-static QString sanitizeName(QString name)
-{
-    static const QRegularExpression regexp(QLatin1String("[^a-zA-Z0-9]"));
-    return name.replace(regexp, QStringLiteral("_"));
-}
-
 static QString spriteId(const Object *object, const QUrl &imageUrl)
 {
     return optionalProperty(object, "sprite", sanitizeName(QFileInfo(imageUrl.fileName()).completeBaseName()));
@@ -387,8 +404,16 @@ static unsigned colorToAbgr(const QColor &color)
             (qRed(rgba) & 0xffu);
 }
 
-static QString toOverriddenPropertyValue(const QVariant &value)
+static QString toOverriddenPropertyValue(const QVariant &value, Context &context)
 {
+    if (value.userType() == objectRefTypeId()) {
+        const auto id = value.value<ObjectRef>().id;
+        if (const auto mapObject = context.renderer->map()->findObjectById(id))
+            return context.instanceName(mapObject, QStringLiteral("inst"));
+        else
+            return QString::number(id);
+    }
+
     switch (value.userType()) {
     case QMetaType::Bool:
         return value.toBool() ? QStringLiteral("True") : QStringLiteral("False");
@@ -764,8 +789,6 @@ static void createAssetsFromTiles(std::vector<GMRGraphic> &assets,
             g.name = context.makeUnique(QStringLiteral("graphic_%1").arg(tile->id()));
         else
             g.name = context.makeUnique(QStringLiteral("tile_%1").arg(tile->id()));
-
-        context.usedNames.insert(g.name);
     };
 
     context.renderer->drawTileLayer(tileRenderFunction, rect);
@@ -960,14 +983,7 @@ static void processLayers(std::vector<std::unique_ptr<GMRLayer>> &gmrLayers,
                     instance.x = qRound(pos.x());
                     instance.y = qRound(pos.y());
 
-                    // Include object ID in the name when necessary because duplicates are not allowed
-                    if (mapObject->name().isEmpty()) {
-                        instance.name = QStringLiteral("inst_%1").arg(mapObject->id());
-                    } else {
-                        instance.name = context.makeUnique(sanitizeName(mapObject->name()));
-                        context.usedNames.insert(instance.name);
-                    }
-
+                    instance.name = context.instanceName(mapObject, QStringLiteral("inst"));
                     instance.tags = readTags(mapObject);
                     props.remove(QStringLiteral("tags"));
 
@@ -983,7 +999,7 @@ static void processLayers(std::vector<std::unique_ptr<GMRLayer>> &gmrLayers,
                         GMOverriddenProperty &prop = instance.properties.back();
                         prop.propertyId = it.key();
                         prop.objectId = instance.objectId;
-                        prop.value = toOverriddenPropertyValue(it.value());
+                        prop.value = toOverriddenPropertyValue(it.value(), context);
                     }
                 }
                 else if (mapObject->isTileObject())
@@ -1054,16 +1070,10 @@ static void processLayers(std::vector<std::unique_ptr<GMRLayer>> &gmrLayers,
                     g.x = pos.x();
                     g.y = pos.y();
 
-                    // Include object ID in the name when necessary because duplicates are not allowed
-                    if (mapObject->name().isEmpty()) {
-                        if (isSprite)
-                            g.name = QStringLiteral("graphic_%1").arg(mapObject->id());
-                        else
-                            g.name = QStringLiteral("tile_%1").arg(mapObject->id());
-                    } else {
-                        g.name = context.makeUnique(sanitizeName(mapObject->name()));
-                        context.usedNames.insert(g.name);
-                    }
+                    if (isSprite)
+                        g.name = context.instanceName(mapObject, QStringLiteral("graphic"));
+                    else
+                        g.name = context.instanceName(mapObject, QStringLiteral("tile"));
 
                     g.tags = readTags(mapObject);
                 }
